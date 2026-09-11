@@ -1,0 +1,71 @@
+<header class="level-head">
+  <p class="eyebrow">Level <%= level.id %> of <%= progress.total %></p>
+  <h1 class="level-title"><%= level.name %></h1>
+  <p class="level-sub"><%= level.subtitle %></p>
+  <% if (level.note) { %>
+    <p class="level-note"><%= level.note %></p>
+  <% } %>
+  <% if (task) { %>
+    <p class="level-task"><%= task %></p>
+  <% } %>
+</header>
+
+<% if (read_only) { %>
+  <p class="banner banner-done">
+    Solved for <%= record.score %> points. This level is read only now - below is the request you sent and the answer the server gave.
+  </p>
+<% } %>
+
+<form class="builder" id="builder" autocomplete="off" novalidate>
+  <fieldset class="field">
+    <legend>Method</legend>
+    <div class="methods" id="methods">
+      <% level.methods.forEach(function (method) { %>
+        <button type="button" class="method" data-method="<%= method %>"><%= method %></button>
+      <% }) %>
+    </div>
+  </fieldset>
+
+  <fieldset class="field">
+    <legend>Route</legend>
+    <div class="route-row">
+      <span class="route-base"><%= base_url %></span>
+      <input type="text" id="route" class="route-input" placeholder="/api/..." spellcheck="false" />
+    </div>
+  </fieldset>
+
+  <% if (level.show_query) { %>
+    <fieldset class="field" id="query-field">
+      <legend>Query string <code class="qmark">?</code></legend>
+      <div class="params" id="params"></div>
+      <button type="button" class="btn btn-ghost" id="add-param">+ add parameter</button>
+    </fieldset>
+  <% } %>
+
+  <% if (level.show_body) { %>
+    <fieldset class="field">
+      <legend>Request body <span class="muted">JSON</span></legend>
+      <textarea id="body" class="body-input" rows="8" spellcheck="false"
+                placeholder="<%= level.body_placeholder %>"></textarea>
+    </fieldset>
+  <% } %>
+
+  <p class="url-preview"><span class="muted">Sending</span> <code id="url-preview">&mdash;</code></p>
+
+  <button type="submit" class="btn btn-run" id="run">RUN</button>
+</form>
+
+<section class="response" id="response" aria-live="polite"></section>
+
+<section class="answer" id="answer-box">
+  <label class="answer-label" for="answer"><%= level.question %></label>
+  <div class="answer-row">
+    <input type="text" id="answer" class="answer-input"
+           placeholder="<%= level.answer_hint %>" spellcheck="false" />
+    <button type="button" class="btn btn-primary" id="submit-answer">Submit answer</button>
+  </div>
+  <p class="answer-feedback" id="answer-feedback" aria-live="polite"></p>
+  <button type="button" class="btn btn-next" id="next-level" hidden>
+    <%= has_next ? 'Next level' : 'See the final score' %>
+  </button>
+</section>

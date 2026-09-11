@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>REST Quest - learn HTTP by sending it</title>
+  <link rel="stylesheet" href="/static/index.css" />
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">{ }</span>
+      <span class="brand-name">REST Quest</span>
+    </div>
+    <div class="topbar-meta">
+      <span class="chip" id="progress-chip"><%= progress.solved %> / <%= progress.total %> solved</span>
+      <span class="chip chip-score" id="score-chip"><%= total_score %> pts</span>
+      <a class="chip chip-link" href="/schemas">Schemas</a>
+      <button type="button" class="chip chip-reset" id="reset">Reset</button>
+    </div>
+  </header>
+
+  <nav class="stepper" id="stepper" aria-label="Levels">
+    <%- include('partials/stepper') %>
+  </nav>
+
+  <main class="layout">
+    <section class="panel panel-level" id="level-panel">
+      <%- include('partials/level') %>
+    </section>
+
+    <aside class="panel panel-docs" id="docs-panel">
+      <%- include('partials/docs') %>
+    </aside>
+  </main>
+
+  <footer class="foot">
+    Every request on this page is a real HTTP request to this server. Open your browser network tab and watch.
+  </footer>
+
+  <script>
+    window.__GAME__ = <%- JSON.stringify({
+      level: level,
+      read_only: read_only,
+      record: record,
+      progress: progress,
+      total_score: total_score,
+      has_next: has_next,
+      all_done: all_done
+    }).replace(/</g, '\\u003c') %>;
+  </script>
+  <script src="/static/index.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,46 @@
+<h2 class="docs-title">Documentation</h2>
+<p class="docs-sub">Everything you have unlocked so far. Each level adds to this.</p>
+
+<% docs.slice().reverse().forEach(function (group) { %>
+  <article class="doc-group">
+    <h3 class="doc-group-title">
+      <span class="doc-group-level">Level <%= group.level %></span>
+      <%= group.name %>
+    </h3>
+
+    <% group.entries.forEach(function (entry) { %>
+      <div class="doc-entry">
+        <p class="doc-head">
+          <span class="verb verb-<%= entry.method.toLowerCase() %>"><%= entry.method %></span>
+          <code class="doc-path"><%= entry.path %></code>
+        </p>
+        <p class="doc-summary"><%= entry.summary %></p>
+        <ul class="doc-details">
+          <% entry.details.forEach(function (line) { %><li><%= line %></li><% }) %>
+        </ul>
+
+        <% if (entry.schema && schema_tables[entry.schema]) { var table = schema_tables[entry.schema]; %>
+          <table class="doc-table">
+            <caption><%= table.label %> fields</caption>
+            <thead>
+              <tr><th>Field</th><th>Type</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+              <% table.fields.forEach(function (field) { %>
+                <tr>
+                  <td><code><%= field.name %></code></td>
+                  <td><span class="type"><%= field.type %></span></td>
+                  <td>
+                    <% if (field.server_generated) { %><span class="tag tag-auto">server generated</span>
+                    <% } else if (field.required) { %><span class="tag tag-req">required</span><% } %>
+                    <%= field.note %>
+                  </td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        <% } %>
+      </div>
+    <% }) %>
+  </article>
+<% }) %>

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Resource schemas - REST Quest</title>
+  <link rel="stylesheet" href="/static/index.css" />
+</head>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">{ }</span>
+      <span class="brand-name">REST Quest</span>
+    </div>
+    <div class="topbar-meta">
+      <a class="chip chip-link" href="/">Back to the game</a>
+    </div>
+  </header>
+
+  <main class="layout layout-single">
+    <section class="panel">
+      <header class="level-head">
+        <p class="eyebrow">Reference</p>
+        <h1 class="level-title">Resource schemas</h1>
+        <p class="level-sub">Every resource this API serves, with the fields and types the server will accept.</p>
+      </header>
+
+      <nav class="schema-nav">
+        <% resources.forEach(function (resource) { %>
+          <a class="chip chip-link" href="#<%= resource.key %>"><%= resource.label %></a>
+        <% }) %>
+      </nav>
+
+      <% resources.forEach(function (resource) { %>
+        <article class="schema-card" id="<%= resource.key %>">
+          <h2 class="schema-title"><%= resource.label %></h2>
+          <p class="doc-head"><code class="doc-path"><%= resource.collection %></code></p>
+          <p class="doc-summary"><%= resource.description %></p>
+
+          <table class="doc-table">
+            <thead>
+              <tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+              <% resource.fields.forEach(function (field) { %>
+                <tr>
+                  <td><code><%= field.name %></code></td>
+                  <td><span class="type"><%= field.type %></span></td>
+                  <td>
+                    <% if (field.server_generated) { %><span class="tag tag-auto">server generated</span>
+                    <% } else if (field.required) { %><span class="tag tag-req">required</span>
+                    <% } else { %><span class="muted">optional</span><% } %>
+                  </td>
+                  <td><%= field.note %></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </article>
+      <% }) %>
+    </section>
+  </main>
+
+  <footer class="foot">
+    This page is rendered on the server: the schema data is collected in Node and baked into the EJS template.
+  </footer>
+</body>
+
+</html>

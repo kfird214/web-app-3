@@ -1,0 +1,13 @@
+<ol class="steps">
+  <% steps.forEach(function (step) { %>
+    <li>
+      <button type="button"
+              class="step step-<%= step.status %><%= step.current ? ' is-current' : '' %>"
+              data-level="<%= step.id %>"
+              <%= step.status === 'locked' ? 'disabled' : '' %>
+              title="<%= step.status === 'locked' ? 'Locked' : step.name %>">
+        <%= step.id %>
+      </button>
+    </li>
+  <% }) %>
+</ol>
