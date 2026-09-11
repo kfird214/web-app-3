@@ -142,16 +142,19 @@
     }
 
     function run() {
-        if (state.read_only) return;
+        if (state.read_only) return Promise.resolve();
 
-        if (!selectedMethod) { localProblem('Pick an HTTP method first.'); return; }
+        if (!selectedMethod) { localProblem('Pick an HTTP method first.'); return Promise.resolve(); }
 
         var route = byId('route').value.trim();
-        if (!route) { localProblem('Type the route you want to call.'); return; }
-        if (route.charAt(0) !== '/') { localProblem('A route has to start with a slash, like /api/items'); return; }
+        if (!route) { localProblem('Type the route you want to call.'); return Promise.resolve(); }
+        if (route.charAt(0) !== '/') {
+            localProblem('A route has to start with a slash, like /api/items');
+            return Promise.resolve();
+        }
         if (route.indexOf('?') !== -1) {
             localProblem('Leave the ? out of the route: the query string is built from the parameter rows.');
-            return;
+            return Promise.resolve();
         }
 
         var options = {
@@ -164,13 +167,13 @@
         if (raw) {
             if (selectedMethod === 'GET') {
                 localProblem('A GET request does not carry a body. Clear it, or pick another method.');
-                return;
+                return Promise.resolve();
             }
             try {
                 JSON.parse(raw);
             } catch (err) {
                 localProblem('The request body is not valid JSON: ' + err.message);
-                return;
+                return Promise.resolve();
             }
             options.headers['Content-Type'] = 'application/json';
             options.body = raw;
@@ -181,7 +184,7 @@
         runButton.disabled = true;
         runButton.classList.add('is-busy');
 
-        fetch(url, options)
+        return fetch(url, options)
             .then(function (res) {
                 return res.text().then(function (text) {
                     var body = null;
@@ -191,6 +194,8 @@
                     var headers = [];
                     res.headers.forEach(function (value, key) { headers.push([key, value]); });
                     headers.sort(function (a, b) { return a[0] < b[0] ? -1 : 1; });
+
+                    setLevelScore(res.headers.get('X-Game-Level-Score'), false);
 
                     var hint = res.headers.get('X-Game-Hint');
                     renderResponse({
@@ -221,6 +226,80 @@
             });
     }
 
+    /* ---------------------------------------------------------------- dev solve
+       Only wired up when the server was started with --dev-solve and therefore
+       rendered the button. It fills the builder with the correct request, sends it,
+       and then fills in the answer - which for most levels can only be read out of
+       the response, so the solution is fetched again afterwards. */
+
+    function fillRequest(solution) {
+        var methods = byId('methods');
+        if (methods) {
+            var button = methods.querySelector('.method[data-method="' + solution.method + '"]');
+            if (button) button.click();     // reuses the normal selection handler
+        }
+
+        var route = byId('route');
+        if (route) route.value = solution.path;
+
+        var params = byId('params');
+        if (params) {
+            params.innerHTML = '';
+            var names = Object.keys(solution.query || {});
+            if (names.length === 0) {
+                params.appendChild(paramRow('', ''));
+            } else {
+                names.forEach(function (name) {
+                    params.appendChild(paramRow(name, String(solution.query[name])));
+                });
+            }
+        }
+
+        var body = byId('body');
+        if (body) body.value = solution.body ? JSON.stringify(solution.body, null, 2) : '';
+
+        refreshPreview();
+    }
+
+    function devSolve() {
+        var button = byId('dev-solve');
+        if (!button || state.read_only) return;
+
+        var url = '/api/game/levels/' + state.level.id + '/solution';
+        var feedback = byId('answer-feedback');
+        button.disabled = true;
+
+        fetch(url)
+            .then(function (res) { return res.json(); })
+            .then(function (solution) {
+                if (solution.error) throw new Error(solution.message || solution.error);
+                fillRequest(solution);
+                return run();
+            })
+            .then(function () { return fetch(url); })
+            .then(function (res) { return res.json(); })
+            .then(function (solution) {
+                var answer = byId('answer');
+                if (!answer) return;
+                if (solution.answer === null || solution.answer === undefined) {
+                    if (feedback) {
+                        feedback.textContent = 'dev solve: the server has no answer for this level yet.';
+                        feedback.className = 'answer-feedback is-wrong';
+                    }
+                    return;
+                }
+                answer.value = solution.answer;
+                answer.focus();
+            })
+            .catch(function (err) {
+                if (feedback) {
+                    feedback.textContent = 'dev solve failed: ' + err.message;
+                    feedback.className = 'answer-feedback is-wrong';
+                }
+            })
+            .then(function () { button.disabled = false; });
+    }
+
     /* ---------------------------------------------------------------- answers */
 
     function submitAnswer() {
@@ -237,7 +316,11 @@
             .then(function (data) {
                 feedback.textContent = data.message;
                 feedback.className = 'answer-feedback ' + (data.correct ? 'is-right' : 'is-wrong');
-                if (!data.correct) return;
+                if (!data.correct) {
+                    setLevelScore(data.at_stake, false);
+                    return;
+                }
+                setLevelScore(data.score, true);
 
                 state.read_only = true;
                 state.record.completed = true;
@@ -263,6 +346,13 @@
                 feedback.textContent = 'Could not reach the server: ' + err.message;
                 feedback.className = 'answer-feedback is-wrong';
             });
+    }
+
+    function setLevelScore(points, earned) {
+        var el = byId('level-score');
+        if (el && points !== null && points !== undefined) {
+            el.textContent = points + (earned ? ' pts earned' : ' pts at stake');
+        }
     }
 
     function updateChips() {
@@ -358,6 +448,9 @@
             form.addEventListener('submit', function (event) { event.preventDefault(); run(); });
             form.addEventListener('input', refreshPreview);
         }
+
+        var devButton = byId('dev-solve');
+        if (devButton) devButton.addEventListener('click', devSolve);
 
         var submit = byId('submit-answer');
         if (submit) submit.addEventListener('click', submitAnswer);

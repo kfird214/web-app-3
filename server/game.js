@@ -1,7 +1,12 @@
 import express from 'express';
-import { LEVELS, levelById, docsUpTo, taskText } from './levels.js';
+import { LEVELS, levelById, docsUpTo, taskText, SOLUTIONS } from './levels.js';
 import { schemas } from './schema.js';
 import { resetSession } from './session.js';
+
+// Development helper, off unless the server is started with --dev-solve. When it is
+// off the solution endpoint does not exist and the button is not rendered, so the
+// expected requests and answers stay unreachable from the browser.
+export const DEV_SOLVE = process.argv.includes('--dev-solve');
 
 const fail = (res, status, error, message, extra = {}) =>
     res.status(status).json({ error, message, ...extra });
@@ -24,8 +29,17 @@ const publicLevel = level => ({
     body_placeholder: level.body_placeholder || '{\n  \n}',
 });
 
+// What a level pays out once it is solved. The last answer attempt is the winning
+// one, so only the attempts before it are penalised.
 function scoreFor(record) {
     const penalty = 5 * record.wrong_requests + 10 * Math.max(0, record.answer_attempts - 1);
+    return Math.max(30, 100 - penalty);
+}
+
+// What the level would pay if the very next answer were correct. Used for the live
+// counter, so a wrong answer is felt straight away rather than one attempt later.
+function atStakeFor(record) {
+    const penalty = 5 * record.wrong_requests + 10 * record.answer_attempts;
     return Math.max(30, 100 - penalty);
 }
 
@@ -72,6 +86,8 @@ export function viewModel(session, levelId, req) {
             completed: record.completed,
             request_ok: record.request_ok,
             score: record.score,
+            // What this level is worth if it were solved right now.
+            at_stake: record.completed ? record.score : atStakeFor(record),
             last: record.last,
         },
         read_only: record.completed,
@@ -79,6 +95,7 @@ export function viewModel(session, levelId, req) {
         total_score: LEVELS.reduce((sum, l) => sum + session.game.levels[l.id].score, 0),
         all_done: solved === LEVELS.length,
         has_next: levelId < LEVELS.length,
+        dev_solve: DEV_SOLVE,
     };
 }
 
@@ -122,6 +139,9 @@ export function levelGate(req, res, next) {
         ? level.accepts_status.includes(status)
         : status < 300;
 
+    // Set below when the level tolerates a request that does not solve it.
+    let warning = null;
+
     // Runs once, just before the response goes out, when the status code is known.
     let done = false;
     const finalize = body => {
@@ -134,9 +154,13 @@ export function levelGate(req, res, next) {
         let hint = verdict.hint || null;
         if (verdict.ok && !ok) {
             hint = 'You reached the right endpoint, but the server did not accept this request. Read the response body.';
+        } else if (!ok && warning && res.statusCode < 300) {
+            // Only warn about a change that really landed; a rejected write speaks for itself.
+            hint = warning;
         }
         res.set('X-Game-Level', String(id));
         res.set('X-Game-Request-Ok', ok ? '1' : '0');
+        res.set('X-Game-Level-Score', String(atStakeFor(record)));
         if (hint) res.set('X-Game-Hint', encodeURIComponent(hint));
 
         record.last = {
@@ -156,10 +180,16 @@ export function levelGate(req, res, next) {
     res.end = (...args) => { finalize(null); return endResponse(...args); };
 
     // Reading with GET is always allowed, so exploring the API is free. Anything that
-    // could change data is refused unless it is what this level actually asked for.
+    // could change data is refused unless it is what this level actually asked for -
+    // or unless the level tolerates it, in which case the write really happens and the
+    // player gets a warning instead of a refusal.
     if (!verdict.ok && req.method !== 'GET') {
-        return fail(res, 403, 'not_this_level',
-            verdict.hint || `This level is not asking for a ${req.method} request here.`);
+        const tolerated = level.tolerate ? level.tolerate(target, req.session) : null;
+        if (!tolerated) {
+            return fail(res, 403, 'not_this_level',
+                verdict.hint || `This level is not asking for a ${req.method} request here.`);
+        }
+        warning = tolerated.warning;
     }
     next();
 }
@@ -227,6 +257,7 @@ gameRouter.post('/levels/:id/answer', async (req, res) => {
         return res.json({
             correct: false,
             message: 'That is not the value the server returned. Read the response once more.',
+            at_stake: atStakeFor(record),
         });
     }
 
@@ -248,6 +279,38 @@ gameRouter.post('/levels/:id/answer', async (req, res) => {
         has_next: model.has_next,
         next_level: model.has_next ? id + 1 : null,
         stepper_html: stepper,
+    });
+});
+
+// Development only: the correct request for a level, plus the expected answer when it
+// can already be computed. The answer for levels whose answer comes out of the response
+// itself (a created id, a confirmation code, a checksum) only appears once the request
+// has actually been sent, so the button asks for this twice.
+gameRouter.get('/levels/:id/solution', (req, res) => {
+    if (!DEV_SOLVE) {
+        return fail(res, 404, 'route_not_found', 'No solution endpoint on this server.');
+    }
+    const id = Number(req.params.id);
+    const level = levelById(id);
+    if (!level) return fail(res, 404, 'unknown_level', `There is no level ${req.params.id}.`);
+    if (id > req.session.game.unlocked) {
+        return fail(res, 403, 'level_locked', `Level ${id} is not unlocked yet.`);
+    }
+    if (level.onEnter) level.onEnter(req.session);
+
+    const recipe = SOLUTIONS[id](req.session);
+    let answer = null;
+    try {
+        answer = level.answer(req.session);
+    } catch {
+        answer = null;
+    }
+    res.json({
+        method: recipe.method,
+        path: recipe.path,
+        query: recipe.query || {},
+        body: recipe.body || null,
+        answer,
     });
 });
 

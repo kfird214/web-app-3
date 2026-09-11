@@ -1,5 +1,10 @@
 <header class="level-head">
-  <p class="eyebrow">Level <%= level.id %> of <%= progress.total %></p>
+  <p class="eyebrow">
+    Level <%= level.id %> of <%= progress.total %>
+    <span class="level-score" id="level-score"><%= record.completed
+      ? record.score + ' pts earned'
+      : record.at_stake + ' pts at stake' %></span>
+  </p>
   <h1 class="level-title"><%= level.name %></h1>
   <p class="level-sub"><%= level.subtitle %></p>
   <% if (level.note) { %>
@@ -52,7 +57,15 @@
 
   <p class="url-preview"><span class="muted">Sending</span> <code id="url-preview">&mdash;</code></p>
 
-  <button type="submit" class="btn btn-run" id="run">RUN</button>
+  <div class="run-row">
+    <button type="submit" class="btn btn-run" id="run">RUN</button>
+    <% if (dev_solve) { %>
+      <button type="button" class="btn btn-dev" id="dev-solve"
+              title="Development only: fills in the correct request, sends it, then fills in the answer">
+        dev solve
+      </button>
+    <% } %>
+  </div>
 </form>
 
 <section class="response" id="response" aria-live="polite"></section>

@@ -7,6 +7,10 @@ import { findItem, reviewsFor, averageRating, recalcChecksum } from './database.
 const queryKeys = q => Object.keys(q);
 const isPlainObject = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 
+// Level 5 patches exactly this field of the player's own item to exactly this value.
+const PATCH_FIELD = 'stock_count';
+const PATCH_FIELD_VALUE = 25;
+
 // Compares the request the player built against what the level expects.
 // Returns { ok, hint } - hints say what is wrong without giving the answer away.
 function expectRequest(target, spec) {
@@ -62,6 +66,17 @@ export const LEVELS = [
                 'A request the current level did not ask for is refused with 403 Forbidden.',
             ],
             schema: 'item',
+        }, {
+            method: 'Reference',
+            path: 'How scoring works',
+            summary: 'Every level starts at 100 points. Only the request the level asked for is free.',
+            details: [
+                'Poking around is how this game is meant to be played - read the docs, guess, send it, see what the server says.',
+                'If you are chasing a perfect score, the arithmetic is: any request that is not the one the level asked for costs 5 points, and that includes reading around with GET.',
+                'A wrong answer costs 10 points.',
+                'A level never falls below 30, and its score is locked in the moment you solve it.',
+                'So a flawless run is 100 a level. Getting there usually takes knowing the level already.',
+            ],
         }],
     },
 
@@ -187,21 +202,49 @@ export const LEVELS = [
         body_placeholder: '{\n  "value": ...\n}',
         task_of: session => {
             const id = session.game.vars.created_item_id || 'the item you created in level 2';
-            return `Set stock_count to 25 on ${id}, the item you created back in level 2. Change that one field only - and mind its type, because the server checks it.`;
+            return `Set ${PATCH_FIELD} to ${PATCH_FIELD_VALUE} on ${id}, the item you created back in level 2. Whatever else that item holds is yours to keep - this one field is the target, and mind its type, because the server checks it.`;
         },
         match: (target, session) => {
             const id = session.game.vars.created_item_id;
             if (!id) return { ok: false, hint: 'Finish level 2 first: this level patches the item you created there.' };
-            const shape = expectRequest(target, { method: 'PATCH', path: `/api/items/${id}/stock_count` });
+            const shape = expectRequest(target, { method: 'PATCH', path: `/api/items/${id}/${PATCH_FIELD}` });
             if (!shape.ok) return shape;
             if (!isPlainObject(target.body) || !('value' in target.body)) {
                 return { ok: false, hint: 'The body must be a JSON object carrying the new value under "value".' };
             }
+            if (target.body.value !== PATCH_FIELD_VALUE) {
+                return {
+                    ok: false,
+                    hint: `This level wants ${PATCH_FIELD} to end up at ${PATCH_FIELD_VALUE}, as a whole number.`,
+                };
+            }
             return { ok: true };
         },
+        // Patching this item is let through even when it is not the patch the level
+        // asked for, so the player can experiment. The change is real, and the target
+        // checksum below simply moves with it - they just get told they did it.
+        tolerate: (target, session) => {
+            const id = session.game.vars.created_item_id;
+            if (!id || target.method !== 'PATCH') return null;
+
+            const prefix = `/api/items/${id}/`;
+            if (!target.path.startsWith(prefix)) return null;
+
+            const field = target.path.slice(prefix.length);
+            if (field === PATCH_FIELD) {
+                return { warning: `That patch went through, but ${PATCH_FIELD} still has to end up at ${PATCH_FIELD_VALUE}.` };
+            }
+            return {
+                warning: `Careful: you changed "${field}", which this level never asked for. That change is real, so the checksum you are hunting for has moved with it. ${PATCH_FIELD} still has to become ${PATCH_FIELD_VALUE}.`,
+            };
+        },
+        // The answer is the checksum a correct patch produces, not whatever checksum the
+        // item happens to carry right now. The other fields are read as they currently
+        // are, so changing them shifts the target instead of failing the level.
         answer: session => {
             const item = findItem(session.db, session.game.vars.created_item_id);
-            return item ? item.checksum : null;
+            if (!item) return null;
+            return recalcChecksum({ ...item, [PATCH_FIELD]: PATCH_FIELD_VALUE }).checksum;
         },
         docs: [{
             method: 'PATCH',
@@ -273,7 +316,7 @@ export const LEVELS = [
         methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
         show_query: false,
         show_body: false,
-        task: 'Find a collection that exists but holds no data, and read what the server answers. Reading around with GET costs you nothing here.',
+        task: 'Find a collection that exists but holds nothing inside it, then read the status line of what comes back.',
         accepts_status: [204],
         match: target => expectRequest(target, { method: 'GET', path: '/api/posts' }),
         answer: () => '204',
@@ -440,3 +483,56 @@ export function docsUpTo(levelId) {
 export function taskText(level, session) {
     return level.task_of ? level.task_of(session) : (level.task || null);
 }
+
+// ---------------------------------------------------------------- development only
+//
+// The canonical correct request for every level, used by the "dev solve" button so a
+// level can be walked through quickly while working on the game. This is never served
+// unless the server was started with --dev-solve, so a normal run gives the player no
+// way to read it.
+
+export const SOLUTIONS = {
+    1: () => ({ method: 'GET', path: '/api/items' }),
+
+    2: () => ({
+        method: 'POST',
+        path: '/api/items',
+        body: { name: 'Cable Organizer', type: 'gadget', price: 19.5, stock_count: 40 },
+    }),
+
+    3: () => ({ method: 'GET', path: '/api/items', query: { type: 'tool' } }),
+
+    4: () => ({
+        method: 'PUT',
+        path: '/api/items/itm_1003',
+        body: { name: 'The REST Handbook, 2nd Edition', type: 'book', price: 95, stock_count: 18 },
+    }),
+
+    5: session => ({
+        method: 'PATCH',
+        path: `/api/items/${session.game.vars.created_item_id || 'itm_UNKNOWN'}/${PATCH_FIELD}`,
+        body: { value: PATCH_FIELD_VALUE },
+    }),
+
+    6: () => ({ method: 'GET', path: '/api/items', query: { type: 'book', stock_count: 7 } }),
+
+    7: () => ({ method: 'GET', path: '/api/posts' }),
+
+    8: () => ({ method: 'GET', path: '/api/items/itm_1003/reviews' }),
+
+    9: () => ({
+        method: 'POST',
+        path: '/api/items/itm_1006/reviews',
+        body: { author: 'Dev', rating: 5, comment: 'Filled in by dev solve.' },
+    }),
+
+    10: session => ({
+        method: 'DELETE',
+        path: `/api/items/${session.game.vars.created_item_id || 'itm_UNKNOWN'}`,
+    }),
+
+    11: session => ({
+        method: 'GET',
+        path: `/api/items/${session.game.vars.created_item_id || 'itm_UNKNOWN'}`,
+    }),
+};
