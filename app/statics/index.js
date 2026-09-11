@@ -1,515 +1,503 @@
 /* REST Quest - client side.
-   Vanilla JS only. Its job is to help the player build a real HTTP request, send it
-   with AJAX, and show what came back. It never decides whether an answer is right:
-   that verdict always comes from the server. */
+   Vanilla JS. It helps the player build a real HTTP request, sends it with AJAX and
+   shows what came back. It never decides whether an answer is right - that verdict
+   always comes from the server. */
 
-(function () {
-    'use strict';
+let game = window.__GAME__;
+let selectedMethod = null;
 
-    var state = window.__GAME__;
-    var levelPanel = document.getElementById('level-panel');
-    var docsPanel = document.getElementById('docs-panel');
-    var stepper = document.getElementById('stepper');
-    var progressChip = document.getElementById('progress-chip');
-    var scoreChip = document.getElementById('score-chip');
+const levelPanel = document.getElementById('level-panel');
+const docsPanel = document.getElementById('docs-panel');
+const stepper = document.getElementById('stepper');
+const progressChip = document.getElementById('progress-chip');
+const scoreChip = document.getElementById('score-chip');
 
-    var selectedMethod = null;
+const byId = id => document.getElementById(id);
 
-    var byId = function (id) { return document.getElementById(id); };
+const FEEDBACK_BASE = 'mt-2.5 mb-0 min-h-[1.2em] text-sm';
+const RESPONSE_CARD = 'rounded-xl border border-line bg-inksoft p-3.5';
+const RESPONSE_LINE = 'm-0 mb-3 flex flex-wrap items-center gap-2.5 text-sm';
+const HEADER_CELL = 'border-t border-line px-2 py-1 align-top';
 
-    function escapeHtml(value) {
-        return String(value)
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function badgeFor(status) {
+    if (status >= 200 && status < 300) return 'badge-ok';
+    if (status >= 300 && status < 400) return 'badge-info';
+    return 'badge-err';
+}
+
+/* ---------------------------------------------------------------- query parameter rows */
+
+function makeParamRow(name = '', value = '') {
+    const row = document.createElement('div');
+    row.className = 'param-row flex items-center gap-1.5';
+    row.innerHTML = `
+        <input type="text" class="param-name input flex-1 basis-0" placeholder="name" spellcheck="false">
+        <span class="font-mono text-muted">=</span>
+        <input type="text" class="param-value input flex-1 basis-0" placeholder="value" spellcheck="false">
+        <button type="button" class="btn btn-del w-8 px-0 text-center text-err hover:border-err"
+                title="Remove this parameter">&minus;</button>`;
+    row.querySelector('.param-name').value = name;
+    row.querySelector('.param-value').value = value;
+    return row;
+}
+
+function buildQueryString() {
+    const pairs = [];
+    for (const row of document.querySelectorAll('#params .param-row')) {
+        const name = row.querySelector('.param-name').value.trim();
+        const value = row.querySelector('.param-value').value.trim();
+        if (name) pairs.push(`${encodeURIComponent(name)}=${encodeURIComponent(value)}`);
+    }
+    return pairs.join('&');
+}
+
+function currentUrl() {
+    const route = byId('route') ? byId('route').value.trim() : '';
+    const query = byId('params') ? buildQueryString() : '';
+    return route + (query ? `?${query}` : '');
+}
+
+function refreshPreview() {
+    const preview = byId('url-preview');
+    if (!preview) return;
+    preview.textContent = `${selectedMethod || 'METHOD'} ${currentUrl() || '/api/...'}`;
+}
+
+/* ---------------------------------------------------------------- the response panel */
+
+function renderResponse(result) {
+    const box = byId('response');
+    if (!box) return;
+
+    if (result.local) {
+        box.innerHTML = `
+            <div class="${RESPONSE_CARD}">
+                <p class="${RESPONSE_LINE}">
+                    <span class="badge badge-err">not sent</span>
+                    <code class="break-all text-muted">${escapeHtml(`${result.method} ${result.url}`)}</code>
+                </p>
+                <p class="verdict verdict-local">${escapeHtml(result.hint)}</p>
+            </div>`;
+        return;
     }
 
-    function statusClass(status) {
-        if (status >= 200 && status < 300) return 'ok';
-        if (status >= 300 && status < 400) return 'info';
-        return 'err';
+    const verdictText = result.request_ok
+        ? 'This is the request the level asked for. Now read the response and answer below.'
+        : (result.hint || 'That is not the request this level is looking for.');
+
+    let bodyHtml;
+    if (result.status === 204) {
+        bodyHtml = `<p class="no-body">No response body - that is exactly what
+            <strong>204 No Content</strong> means: the request succeeded and there was
+            deliberately nothing to send back.</p>`;
+    } else if (result.body === null || result.body === '') {
+        bodyHtml = '<p class="no-body">The response had an empty body.</p>';
+    } else {
+        const text = typeof result.body === 'string' ? result.body : JSON.stringify(result.body, null, 2);
+        bodyHtml = `<pre class="json">${escapeHtml(text)}</pre>`;
     }
 
-    /* ---------------------------------------------------------------- query parameter rows */
+    const notice = result.notice
+        ? `<p class="m-0 mb-3 text-sm text-warn">Server note: ${escapeHtml(result.notice)}</p>`
+        : '';
 
-    function paramRow(name, value) {
-        var row = document.createElement('div');
-        row.className = 'param-row';
-        row.innerHTML =
-            '<input type="text" class="param-name" placeholder="name" spellcheck="false" />' +
-            '<span class="param-eq">=</span>' +
-            '<input type="text" class="param-value" placeholder="value" spellcheck="false" />' +
-            '<button type="button" class="btn btn-mini btn-del" title="Remove this parameter">&minus;</button>';
-        row.querySelector('.param-name').value = name || '';
-        row.querySelector('.param-value').value = value || '';
-        return row;
+    let headersHtml = '';
+    if (result.headers && result.headers.length) {
+        const rows = result.headers.map(([name, value]) => `
+            <tr>
+                <td class="${HEADER_CELL} whitespace-nowrap text-accent"><code>${escapeHtml(name)}</code></td>
+                <td class="${HEADER_CELL} break-words">${escapeHtml(value)}</td>
+            </tr>`).join('');
+        headersHtml = `
+            <details class="mt-3 text-[0.83rem]">
+                <summary class="cursor-pointer text-muted">Response headers</summary>
+                <table class="mt-2 w-full border-collapse"><tbody>${rows}</tbody></table>
+            </details>`;
     }
 
-    function buildQuery() {
-        var pairs = [];
-        var rows = document.querySelectorAll('#params .param-row');
-        for (var i = 0; i < rows.length; i++) {
-            var name = rows[i].querySelector('.param-name').value.trim();
-            var value = rows[i].querySelector('.param-value').value.trim();
-            if (name) pairs.push(encodeURIComponent(name) + '=' + encodeURIComponent(value));
+    const statusLabel = result.status + (result.status_text ? ` ${result.status_text}` : '');
+
+    box.innerHTML = `
+        <div class="${RESPONSE_CARD}">
+            <p class="${RESPONSE_LINE}">
+                <span class="badge ${badgeFor(result.status)}">${escapeHtml(statusLabel)}</span>
+                <code class="break-all text-muted">${escapeHtml(`${result.method} ${result.url}`)}</code>
+            </p>
+            <p class="verdict ${result.request_ok ? 'verdict-ok' : 'verdict-no'}">${escapeHtml(verdictText)}</p>
+            ${notice}${bodyHtml}${headersHtml}
+        </div>`;
+}
+
+function showLocalProblem(message) {
+    renderResponse({
+        local: true,
+        method: selectedMethod || 'METHOD',
+        url: currentUrl() || '/api/...',
+        hint: message,
+    });
+}
+
+/* ---------------------------------------------------------------- sending the request */
+
+async function sendRequest() {
+    if (game.read_only) return;
+
+    if (!selectedMethod) return showLocalProblem('Pick an HTTP method first.');
+
+    const route = byId('route').value.trim();
+    if (!route) return showLocalProblem('Type the route you want to call.');
+    if (!route.startsWith('/')) {
+        return showLocalProblem('A route has to start with a slash, like /api/items');
+    }
+    if (route.includes('?')) {
+        return showLocalProblem('Leave the ? out of the route: the query string is built from the parameter rows.');
+    }
+
+    const options = {
+        method: selectedMethod,
+        headers: { 'X-Game-Level': String(game.level.id) },
+    };
+
+    const bodyField = byId('body');
+    const raw = bodyField ? bodyField.value.trim() : '';
+    if (raw) {
+        if (selectedMethod === 'GET') {
+            return showLocalProblem('A GET request does not carry a body. Clear it, or pick another method.');
         }
-        return pairs.join('&');
+        try {
+            JSON.parse(raw);
+        } catch (err) {
+            return showLocalProblem(`The request body is not valid JSON: ${err.message}`);
+        }
+        options.headers['Content-Type'] = 'application/json';
+        options.body = raw;
     }
 
-    function currentUrl() {
-        var route = byId('route') ? byId('route').value.trim() : '';
-        var query = byId('params') ? buildQuery() : '';
-        return route + (query ? '?' + query : '');
+    const url = currentUrl();
+    const runButton = byId('run');
+    runButton.disabled = true;
+    runButton.classList.add('opacity-60');
+
+    try {
+        const response = await fetch(url, options);
+        const text = await response.text();
+
+        let body = null;
+        if (text) {
+            try { body = JSON.parse(text); } catch { body = text; }
+        }
+
+        const headers = [...response.headers].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+        const hint = response.headers.get('X-Game-Hint');
+        const requestOk = response.headers.get('X-Game-Request-Ok') === '1';
+
+        setLevelScore(response.headers.get('X-Game-Level-Score'), false);
+
+        renderResponse({
+            method: options.method,
+            url,
+            status: response.status,
+            status_text: response.statusText || '',
+            request_ok: requestOk,
+            hint: hint ? decodeURIComponent(hint) : null,
+            notice: response.headers.get('X-Notice'),
+            body,
+            headers,
+        });
+
+        if (requestOk) {
+            game.record.request_ok = true;
+            byId('answer')?.focus();
+        }
+    } catch (err) {
+        showLocalProblem(`The request could not be sent: ${err.message}`);
+    } finally {
+        runButton.disabled = false;
+        runButton.classList.remove('opacity-60');
+    }
+}
+
+/* ---------------------------------------------------------------- dev solve
+   Only wired up when the server ran with --dev-solve and therefore rendered the
+   button. It fills the builder with the correct request, sends it, then fills in the
+   answer - which for most levels can only be read out of the response, so the
+   solution is fetched a second time afterwards. */
+
+function fillRequest(solution) {
+    byId('methods')?.querySelector(`.method[data-method="${solution.method}"]`)?.click();
+
+    const route = byId('route');
+    if (route) route.value = solution.path;
+
+    const params = byId('params');
+    if (params) {
+        params.innerHTML = '';
+        const names = Object.keys(solution.query || {});
+        if (names.length === 0) {
+            params.appendChild(makeParamRow());
+        } else {
+            for (const name of names) params.appendChild(makeParamRow(name, String(solution.query[name])));
+        }
     }
 
-    function refreshPreview() {
-        var preview = byId('url-preview');
-        if (!preview) return;
-        var url = currentUrl();
-        preview.textContent = (selectedMethod || 'METHOD') + ' ' + (url || '/api/...');
-    }
+    const body = byId('body');
+    if (body) body.value = solution.body ? JSON.stringify(solution.body, null, 2) : '';
 
-    /* ---------------------------------------------------------------- response panel */
+    refreshPreview();
+}
 
-    function renderResponse(result) {
-        var box = byId('response');
-        if (!box) return;
+async function devSolve() {
+    const button = byId('dev-solve');
+    if (!button || game.read_only) return;
 
-        var verdict = result.local
-            ? '<p class="verdict verdict-local">' + escapeHtml(result.hint) + '</p>'
-            : '<p class="verdict ' + (result.request_ok ? 'verdict-ok' : 'verdict-no') + '">' +
-              escapeHtml(result.request_ok
-                  ? 'This is the request the level asked for. Now read the response and answer below.'
-                  : (result.hint || 'That is not the request this level is looking for.')) +
-              '</p>';
+    const url = `/api/game/levels/${game.level.id}/solution`;
+    button.disabled = true;
 
-        if (result.local) {
-            box.innerHTML = '<div class="response-card">' +
-                '<p class="response-line"><span class="badge badge-err">not sent</span>' +
-                '<code>' + escapeHtml(result.method + ' ' + result.url) + '</code></p>' +
-                verdict + '</div>';
+    try {
+        const recipe = await (await fetch(url)).json();
+        if (recipe.error) throw new Error(recipe.message || recipe.error);
+
+        fillRequest(recipe);
+        await sendRequest();
+
+        const solved = await (await fetch(url)).json();
+        const answer = byId('answer');
+        if (!answer) return;
+
+        if (solved.answer === null || solved.answer === undefined) {
+            setFeedback('dev solve: the server has no answer for this level yet.', false);
             return;
         }
-
-        var bodyHtml;
-        if (result.status === 204) {
-            bodyHtml = '<p class="no-body">No response body - that is exactly what <strong>204 No Content</strong> means: ' +
-                'the request succeeded and there was deliberately nothing to send back.</p>';
-        } else if (result.body === null || result.body === '') {
-            bodyHtml = '<p class="no-body">The response had an empty body.</p>';
-        } else if (typeof result.body === 'string') {
-            bodyHtml = '<pre class="json">' + escapeHtml(result.body) + '</pre>';
-        } else {
-            bodyHtml = '<pre class="json">' + escapeHtml(JSON.stringify(result.body, null, 2)) + '</pre>';
-        }
-
-        var headersHtml = '';
-        if (result.headers && result.headers.length) {
-            var rows = result.headers.map(function (h) {
-                return '<tr><td><code>' + escapeHtml(h[0]) + '</code></td><td>' + escapeHtml(h[1]) + '</td></tr>';
-            }).join('');
-            headersHtml = '<details class="headers"><summary>Response headers</summary>' +
-                '<table class="header-table"><tbody>' + rows + '</tbody></table></details>';
-        }
-
-        var notice = '';
-        if (result.notice) {
-            notice = '<p class="notice">Server note: ' + escapeHtml(result.notice) + '</p>';
-        }
-
-        box.innerHTML = '<div class="response-card">' +
-            '<p class="response-line">' +
-            '<span class="badge badge-' + statusClass(result.status) + '">' +
-            escapeHtml(result.status + (result.status_text ? ' ' + result.status_text : '')) + '</span>' +
-            '<code>' + escapeHtml(result.method + ' ' + result.url) + '</code></p>' +
-            verdict + notice + bodyHtml + headersHtml +
-            '</div>';
+        answer.value = solved.answer;
+        answer.focus();
+    } catch (err) {
+        setFeedback(`dev solve failed: ${err.message}`, false);
+    } finally {
+        button.disabled = false;
     }
+}
 
-    /* ---------------------------------------------------------------- sending the request */
+/* ---------------------------------------------------------------- answers */
 
-    function localProblem(message) {
-        renderResponse({
-            local: true,
-            method: selectedMethod || 'METHOD',
-            url: currentUrl() || '/api/...',
-            hint: message,
-        });
-    }
+function setFeedback(message, correct) {
+    const feedback = byId('answer-feedback');
+    if (!feedback) return;
+    feedback.textContent = message;
+    feedback.className = `${FEEDBACK_BASE} ${correct ? 'text-ok' : 'text-[#ff9d96]'}`;
+}
 
-    function statusTextFor(res) {
-        // Some browsers leave statusText empty for HTTP/2, so fall back to nothing.
-        return res.statusText || '';
-    }
+async function submitAnswer() {
+    const input = byId('answer');
+    if (!input || game.read_only) return;
 
-    function run() {
-        if (state.read_only) return Promise.resolve();
-
-        if (!selectedMethod) { localProblem('Pick an HTTP method first.'); return Promise.resolve(); }
-
-        var route = byId('route').value.trim();
-        if (!route) { localProblem('Type the route you want to call.'); return Promise.resolve(); }
-        if (route.charAt(0) !== '/') {
-            localProblem('A route has to start with a slash, like /api/items');
-            return Promise.resolve();
-        }
-        if (route.indexOf('?') !== -1) {
-            localProblem('Leave the ? out of the route: the query string is built from the parameter rows.');
-            return Promise.resolve();
-        }
-
-        var options = {
-            method: selectedMethod,
-            headers: { 'X-Game-Level': String(state.level.id) },
-        };
-
-        var bodyField = byId('body');
-        var raw = bodyField ? bodyField.value.trim() : '';
-        if (raw) {
-            if (selectedMethod === 'GET') {
-                localProblem('A GET request does not carry a body. Clear it, or pick another method.');
-                return Promise.resolve();
-            }
-            try {
-                JSON.parse(raw);
-            } catch (err) {
-                localProblem('The request body is not valid JSON: ' + err.message);
-                return Promise.resolve();
-            }
-            options.headers['Content-Type'] = 'application/json';
-            options.body = raw;
-        }
-
-        var url = currentUrl();
-        var runButton = byId('run');
-        runButton.disabled = true;
-        runButton.classList.add('is-busy');
-
-        return fetch(url, options)
-            .then(function (res) {
-                return res.text().then(function (text) {
-                    var body = null;
-                    if (text) {
-                        try { body = JSON.parse(text); } catch (err) { body = text; }
-                    }
-                    var headers = [];
-                    res.headers.forEach(function (value, key) { headers.push([key, value]); });
-                    headers.sort(function (a, b) { return a[0] < b[0] ? -1 : 1; });
-
-                    setLevelScore(res.headers.get('X-Game-Level-Score'), false);
-
-                    var hint = res.headers.get('X-Game-Hint');
-                    renderResponse({
-                        method: options.method,
-                        url: url,
-                        status: res.status,
-                        status_text: statusTextFor(res),
-                        request_ok: res.headers.get('X-Game-Request-Ok') === '1',
-                        hint: hint ? decodeURIComponent(hint) : null,
-                        notice: res.headers.get('X-Notice'),
-                        body: body,
-                        headers: headers,
-                    });
-
-                    if (res.headers.get('X-Game-Request-Ok') === '1') {
-                        state.record.request_ok = true;
-                        var answer = byId('answer');
-                        if (answer) answer.focus();
-                    }
-                });
-            })
-            .catch(function (err) {
-                localProblem('The request could not be sent: ' + err.message);
-            })
-            .then(function () {
-                runButton.disabled = false;
-                runButton.classList.remove('is-busy');
-            });
-    }
-
-    /* ---------------------------------------------------------------- dev solve
-       Only wired up when the server was started with --dev-solve and therefore
-       rendered the button. It fills the builder with the correct request, sends it,
-       and then fills in the answer - which for most levels can only be read out of
-       the response, so the solution is fetched again afterwards. */
-
-    function fillRequest(solution) {
-        var methods = byId('methods');
-        if (methods) {
-            var button = methods.querySelector('.method[data-method="' + solution.method + '"]');
-            if (button) button.click();     // reuses the normal selection handler
-        }
-
-        var route = byId('route');
-        if (route) route.value = solution.path;
-
-        var params = byId('params');
-        if (params) {
-            params.innerHTML = '';
-            var names = Object.keys(solution.query || {});
-            if (names.length === 0) {
-                params.appendChild(paramRow('', ''));
-            } else {
-                names.forEach(function (name) {
-                    params.appendChild(paramRow(name, String(solution.query[name])));
-                });
-            }
-        }
-
-        var body = byId('body');
-        if (body) body.value = solution.body ? JSON.stringify(solution.body, null, 2) : '';
-
-        refreshPreview();
-    }
-
-    function devSolve() {
-        var button = byId('dev-solve');
-        if (!button || state.read_only) return;
-
-        var url = '/api/game/levels/' + state.level.id + '/solution';
-        var feedback = byId('answer-feedback');
-        button.disabled = true;
-
-        fetch(url)
-            .then(function (res) { return res.json(); })
-            .then(function (solution) {
-                if (solution.error) throw new Error(solution.message || solution.error);
-                fillRequest(solution);
-                return run();
-            })
-            .then(function () { return fetch(url); })
-            .then(function (res) { return res.json(); })
-            .then(function (solution) {
-                var answer = byId('answer');
-                if (!answer) return;
-                if (solution.answer === null || solution.answer === undefined) {
-                    if (feedback) {
-                        feedback.textContent = 'dev solve: the server has no answer for this level yet.';
-                        feedback.className = 'answer-feedback is-wrong';
-                    }
-                    return;
-                }
-                answer.value = solution.answer;
-                answer.focus();
-            })
-            .catch(function (err) {
-                if (feedback) {
-                    feedback.textContent = 'dev solve failed: ' + err.message;
-                    feedback.className = 'answer-feedback is-wrong';
-                }
-            })
-            .then(function () { button.disabled = false; });
-    }
-
-    /* ---------------------------------------------------------------- answers */
-
-    function submitAnswer() {
-        var input = byId('answer');
-        var feedback = byId('answer-feedback');
-        if (!input || state.read_only) return;
-
-        fetch('/api/game/levels/' + state.level.id + '/answer', {
+    try {
+        const response = await fetch(`/api/game/levels/${game.level.id}/answer`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ answer: input.value }),
-        })
-            .then(function (res) { return res.json(); })
-            .then(function (data) {
-                feedback.textContent = data.message;
-                feedback.className = 'answer-feedback ' + (data.correct ? 'is-right' : 'is-wrong');
-                if (!data.correct) {
-                    setLevelScore(data.at_stake, false);
-                    return;
-                }
-                setLevelScore(data.score, true);
+        });
+        const data = await response.json();
 
-                state.read_only = true;
-                state.record.completed = true;
-                state.record.score = data.score;
-                if (data.progress) state.progress = data.progress;
-                state.total_score = data.total_score;
-                state.all_done = data.all_done;
-                if (data.stepper_html) stepper.innerHTML = data.stepper_html;
-                updateChips();
-                lockBuilder();
+        setFeedback(data.message, data.correct);
 
-                var next = byId('next-level');
-                if (next && data.next_level) {
-                    next.hidden = false;
-                    next.dataset.level = String(data.next_level);
-                    next.focus();
-                } else if (next) {
-                    next.hidden = true;
-                    feedback.textContent = data.message + ' Final score: ' + data.total_score + ' points.';
-                }
-            })
-            .catch(function (err) {
-                feedback.textContent = 'Could not reach the server: ' + err.message;
-                feedback.className = 'answer-feedback is-wrong';
-            });
+        if (!data.correct) {
+            setLevelScore(data.at_stake, false);
+            return;
+        }
+        setLevelScore(data.score, true);
+
+        game.read_only = true;
+        game.record.completed = true;
+        game.record.score = data.score;
+        if (data.progress) game.progress = data.progress;
+        game.total_score = data.total_score;
+        game.all_done = data.all_done;
+        if (data.stepper_html) stepper.innerHTML = data.stepper_html;
+
+        updateChips();
+        lockBuilder();
+
+        const next = byId('next-level');
+        if (!next) return;
+
+        if (data.next_level) {
+            next.hidden = false;
+            next.dataset.level = String(data.next_level);
+            next.focus();
+        } else {
+            next.hidden = true;
+            setFeedback(`${data.message} Final score: ${data.total_score} points.`, true);
+        }
+    } catch (err) {
+        setFeedback(`Could not reach the server: ${err.message}`, false);
     }
+}
 
-    function setLevelScore(points, earned) {
-        var el = byId('level-score');
-        if (el && points !== null && points !== undefined) {
-            el.textContent = points + (earned ? ' pts earned' : ' pts at stake');
-        }
+function setLevelScore(points, earned) {
+    const element = byId('level-score');
+    if (!element || points === null || points === undefined) return;
+    element.textContent = `· ${points} pts ${earned ? 'earned' : 'at stake'}`;
+}
+
+function updateChips() {
+    if (progressChip && game.progress) {
+        progressChip.textContent = `${game.progress.solved} / ${game.progress.total} solved`;
     }
+    if (scoreChip) scoreChip.textContent = `${game.total_score} pts`;
+}
 
-    function updateChips() {
-        if (progressChip && state.progress) {
-            progressChip.textContent = state.progress.solved + ' / ' + state.progress.total + ' solved';
-        }
-        if (scoreChip) scoreChip.textContent = state.total_score + ' pts';
+function lockBuilder() {
+    const form = byId('builder');
+    if (!form) return;
+
+    for (const control of form.querySelectorAll('input, textarea, button')) control.disabled = true;
+    form.classList.add('opacity-65');
+
+    const answer = byId('answer');
+    const submit = byId('submit-answer');
+    if (answer) answer.disabled = true;
+    if (submit) submit.disabled = true;
+}
+
+/* ---------------------------------------------------------------- navigation */
+
+async function goToLevel(id) {
+    try {
+        const response = await fetch(`/api/game/levels/${id}/view`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || 'Could not open that level.');
+
+        levelPanel.innerHTML = data.html.level;
+        docsPanel.innerHTML = data.html.docs;
+        stepper.innerHTML = data.html.stepper;
+
+        game = {
+            level: data.level,
+            read_only: data.read_only,
+            record: data.record,
+            progress: data.progress,
+            total_score: data.total_score,
+            has_next: data.has_next,
+            all_done: data.all_done,
+        };
+
+        updateChips();
+        mountLevel();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+        window.alert(err.message);
     }
+}
 
-    function lockBuilder() {
-        var form = byId('builder');
-        if (!form) return;
-        var controls = form.querySelectorAll('input, textarea, button');
-        for (var i = 0; i < controls.length; i++) controls[i].disabled = true;
-        form.classList.add('is-locked');
+/* ---------------------------------------------------------------- wiring up a level
+   Runs once per level, because the panel markup is replaced whenever the player
+   moves between levels. */
 
-        var answer = byId('answer');
-        var submit = byId('submit-answer');
-        if (answer) answer.disabled = true;
-        if (submit) submit.disabled = true;
-    }
+function mountLevel() {
+    selectedMethod = null;
 
-    /* ---------------------------------------------------------------- navigation */
+    const methods = byId('methods');
+    if (methods) {
+        methods.addEventListener('click', event => {
+            const button = event.target.closest('.method');
+            if (!button || button.disabled) return;
 
-    function goToLevel(id) {
-        fetch('/api/game/levels/' + id + '/view')
-            .then(function (res) {
-                return res.json().then(function (data) {
-                    if (!res.ok) throw new Error(data.message || 'Could not open that level.');
-                    return data;
-                });
-            })
-            .then(function (data) {
-                levelPanel.innerHTML = data.html.level;
-                docsPanel.innerHTML = data.html.docs;
-                stepper.innerHTML = data.html.stepper;
-                state = {
-                    level: data.level,
-                    read_only: data.read_only,
-                    record: data.record,
-                    progress: data.progress,
-                    total_score: data.total_score,
-                    has_next: data.has_next,
-                    all_done: data.all_done,
-                };
-                updateChips();
-                mount();
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-            })
-            .catch(function (err) { window.alert(err.message); });
-    }
-
-    /* ---------------------------------------------------------------- wiring up a level */
-
-    function mount() {
-        selectedMethod = null;
-
-        var methods = byId('methods');
-        if (methods) {
-            methods.addEventListener('click', function (event) {
-                var button = event.target.closest('.method');
-                if (!button || button.disabled) return;
-                var all = methods.querySelectorAll('.method');
-                for (var i = 0; i < all.length; i++) all[i].classList.remove('is-active');
-                button.classList.add('is-active');
-                selectedMethod = button.dataset.method;
-                refreshPreview();
-            });
-        }
-
-        var params = byId('params');
-        if (params) {
-            params.appendChild(paramRow('', ''));
-            params.addEventListener('click', function (event) {
-                var del = event.target.closest('.btn-del');
-                if (!del || del.disabled) return;
-                var rows = params.querySelectorAll('.param-row');
-                if (rows.length > 1) del.closest('.param-row').remove();
-                else {
-                    del.closest('.param-row').querySelector('.param-name').value = '';
-                    del.closest('.param-row').querySelector('.param-value').value = '';
-                }
-                refreshPreview();
-            });
-            byId('add-param').addEventListener('click', function () {
-                params.appendChild(paramRow('', ''));
-                refreshPreview();
-            });
-        }
-
-        var form = byId('builder');
-        if (form) {
-            form.addEventListener('submit', function (event) { event.preventDefault(); run(); });
-            form.addEventListener('input', refreshPreview);
-        }
-
-        var devButton = byId('dev-solve');
-        if (devButton) devButton.addEventListener('click', devSolve);
-
-        var submit = byId('submit-answer');
-        if (submit) submit.addEventListener('click', submitAnswer);
-
-        var answerInput = byId('answer');
-        if (answerInput) {
-            answerInput.addEventListener('keydown', function (event) {
-                if (event.key === 'Enter') { event.preventDefault(); submitAnswer(); }
-            });
-        }
-
-        var next = byId('next-level');
-        if (next) {
-            next.addEventListener('click', function () {
-                var target = next.dataset.level || (state.level.id + 1);
-                goToLevel(Number(target));
-            });
-            if (state.read_only && state.has_next) {
-                next.hidden = false;
-                next.dataset.level = String(state.level.id + 1);
-            }
-        }
-
-        // Replay whatever this level last produced, so going back to a solved level
-        // still shows the request and the response that solved it.
-        if (state.record && state.record.last) {
-            var last = state.record.last;
-            renderResponse({
-                method: last.method,
-                url: last.url,
-                status: last.status,
-                status_text: '',
-                request_ok: last.request_ok,
-                hint: last.hint,
-                body: last.body,
-                headers: null,
-            });
-        }
-
-        if (state.read_only) lockBuilder();
-        refreshPreview();
-    }
-
-    /* ---------------------------------------------------------------- one time wiring */
-
-    stepper.addEventListener('click', function (event) {
-        var button = event.target.closest('.step');
-        if (!button || button.disabled || button.classList.contains('is-current')) return;
-        goToLevel(Number(button.dataset.level));
-    });
-
-    var reset = byId('reset');
-    if (reset) {
-        reset.addEventListener('click', function () {
-            if (!window.confirm('Clear all progress and start over from level 1?')) return;
-            fetch('/api/game/reset', { method: 'POST' })
-                .then(function () { window.location.href = '/'; });
+            for (const other of methods.querySelectorAll('.method')) other.classList.remove('is-active');
+            button.classList.add('is-active');
+            selectedMethod = button.dataset.method;
+            refreshPreview();
         });
     }
 
-    mount();
-})();
+    const params = byId('params');
+    if (params) {
+        params.appendChild(makeParamRow());
+
+        params.addEventListener('click', event => {
+            const remove = event.target.closest('.btn-del');
+            if (!remove || remove.disabled) return;
+
+            const row = remove.closest('.param-row');
+            if (params.querySelectorAll('.param-row').length > 1) {
+                row.remove();
+            } else {
+                row.querySelector('.param-name').value = '';
+                row.querySelector('.param-value').value = '';
+            }
+            refreshPreview();
+        });
+
+        byId('add-param').addEventListener('click', () => {
+            params.appendChild(makeParamRow());
+            refreshPreview();
+        });
+    }
+
+    const form = byId('builder');
+    if (form) {
+        form.addEventListener('submit', event => {
+            event.preventDefault();
+            sendRequest();
+        });
+        form.addEventListener('input', refreshPreview);
+    }
+
+    byId('dev-solve')?.addEventListener('click', devSolve);
+    byId('submit-answer')?.addEventListener('click', submitAnswer);
+
+    byId('answer')?.addEventListener('keydown', event => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        submitAnswer();
+    });
+
+    const next = byId('next-level');
+    if (next) {
+        next.addEventListener('click', () => goToLevel(Number(next.dataset.level || game.level.id + 1)));
+        if (game.read_only && game.has_next) {
+            next.hidden = false;
+            next.dataset.level = String(game.level.id + 1);
+        }
+    }
+
+    // Replay whatever this level last produced, so coming back to a solved level still
+    // shows the request and the response that solved it.
+    if (game.record?.last) {
+        const last = game.record.last;
+        renderResponse({
+            method: last.method,
+            url: last.url,
+            status: last.status,
+            status_text: '',
+            request_ok: last.request_ok,
+            hint: last.hint,
+            body: last.body,
+            headers: null,
+        });
+    }
+
+    if (game.read_only) lockBuilder();
+    refreshPreview();
+}
+
+/* ---------------------------------------------------------------- one time wiring */
+
+stepper.addEventListener('click', event => {
+    const button = event.target.closest('.step');
+    if (!button || button.disabled || button.classList.contains('is-current')) return;
+    goToLevel(Number(button.dataset.level));
+});
+
+byId('reset')?.addEventListener('click', async () => {
+    if (!window.confirm('Clear all progress and start over from level 1?')) return;
+    await fetch('/api/game/reset', { method: 'POST' });
+    window.location.href = '/';
+});
+
+mountLevel();

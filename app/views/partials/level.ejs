@@ -1,66 +1,83 @@
-<header class="level-head">
-  <p class="eyebrow">
+<header class="mb-5">
+  <p class="m-0 mb-1 text-xs tracking-[0.14em] text-accent uppercase">
     Level <%= level.id %> of <%= progress.total %>
-    <span class="level-score" id="level-score"><%= record.completed
-      ? record.score + ' pts earned'
-      : record.at_stake + ' pts at stake' %></span>
+    <span class="tracking-wider text-muted" id="level-score">&middot;
+      <%= record.completed ? record.score + ' pts earned' : record.at_stake + ' pts at stake' %>
+    </span>
   </p>
-  <h1 class="level-title"><%= level.name %></h1>
-  <p class="level-sub"><%= level.subtitle %></p>
+
+  <h1 class="m-0 text-3xl leading-tight font-bold tracking-tight sm:text-4xl"><%= level.name %></h1>
+  <p class="mt-1.5 mb-0 text-lg text-muted"><%= level.subtitle %></p>
+
   <% if (level.note) { %>
-    <p class="level-note"><%= level.note %></p>
+    <p class="mt-3.5 mb-0 rounded-md border-l-[3px] border-warn bg-warn/10 px-3 py-2 text-sm text-warn">
+      <%= level.note %>
+    </p>
   <% } %>
+
   <% if (task) { %>
-    <p class="level-task"><%= task %></p>
+    <p class="mt-3.5 mb-0 rounded-lg border border-line bg-panel2 px-3.5 py-2.5 text-[0.94rem]">
+      <%= task %>
+    </p>
   <% } %>
 </header>
 
 <% if (read_only) { %>
-  <p class="banner banner-done">
-    Solved for <%= record.score %> points. This level is read only now - below is the request you sent and the answer the server gave.
+  <p class="mb-4 rounded-lg border border-ok/45 bg-ok/12 px-3.5 py-2.5 text-sm text-ok">
+    Solved for <%= record.score %> points. This level is read only now - below is the request you sent
+    and the answer the server gave.
   </p>
 <% } %>
 
-<form class="builder" id="builder" autocomplete="off" novalidate>
-  <fieldset class="field">
+<form class="flex flex-col gap-4" id="builder" autocomplete="off" novalidate>
+  <fieldset class="field m-0">
     <legend>Method</legend>
-    <div class="methods" id="methods">
+    <div class="flex flex-wrap gap-1.5" id="methods">
       <% level.methods.forEach(function (method) { %>
         <button type="button" class="method" data-method="<%= method %>"><%= method %></button>
       <% }) %>
     </div>
   </fieldset>
 
-  <fieldset class="field">
+  <fieldset class="field m-0">
     <legend>Route</legend>
-    <div class="route-row">
-      <span class="route-base"><%= base_url %></span>
-      <input type="text" id="route" class="route-input" placeholder="/api/..." spellcheck="false" />
+    <div class="flex flex-wrap items-stretch overflow-hidden rounded-lg border border-line bg-panel">
+      <span class="hidden border-r border-line bg-inksoft px-2.5 py-2 font-mono text-sm
+                   whitespace-nowrap text-muted sm:block"><%= base_url %></span>
+      <input type="text" id="route" class="input flex-1 basis-48 rounded-none border-0"
+             placeholder="/api/..." spellcheck="false" />
     </div>
   </fieldset>
 
   <% if (level.show_query) { %>
-    <fieldset class="field" id="query-field">
-      <legend>Query string <code class="qmark">?</code></legend>
-      <div class="params" id="params"></div>
-      <button type="button" class="btn btn-ghost" id="add-param">+ add parameter</button>
+    <fieldset class="field m-0" id="query-field">
+      <legend>Query string <code class="text-mint normal-case">?</code></legend>
+      <div class="mb-2.5 flex flex-col gap-2" id="params"></div>
+      <button type="button" class="btn bg-transparent text-xs text-muted" id="add-param">
+        + add parameter
+      </button>
     </fieldset>
   <% } %>
 
   <% if (level.show_body) { %>
-    <fieldset class="field">
-      <legend>Request body <span class="muted">JSON</span></legend>
-      <textarea id="body" class="body-input" rows="8" spellcheck="false"
+    <fieldset class="field m-0">
+      <legend>Request body <span class="font-normal normal-case">JSON</span></legend>
+      <textarea id="body" class="input w-full resize-y" rows="8" spellcheck="false"
                 placeholder="<%= level.body_placeholder %>"></textarea>
     </fieldset>
   <% } %>
 
-  <p class="url-preview"><span class="muted">Sending</span> <code id="url-preview">&mdash;</code></p>
+  <p class="m-0 text-sm text-muted">
+    <span>Sending</span>
+    <code class="break-all text-mint" id="url-preview">&mdash;</code>
+  </p>
 
-  <div class="run-row">
-    <button type="submit" class="btn btn-run" id="run">RUN</button>
+  <div class="flex flex-wrap items-center gap-2.5">
+    <button type="submit" class="btn border-mint bg-mint px-9 tracking-widest text-[#06231b]
+                                 hover:border-mint max-sm:w-full" id="run">RUN</button>
     <% if (dev_solve) { %>
-      <button type="button" class="btn btn-dev" id="dev-solve"
+      <button type="button" class="btn border-dashed border-warn bg-transparent font-mono text-xs
+                                   text-warn hover:border-warn hover:bg-warn/10" id="dev-solve"
               title="Development only: fills in the correct request, sends it, then fills in the answer">
         dev solve
       </button>
@@ -68,17 +85,22 @@
   </div>
 </form>
 
-<section class="response" id="response" aria-live="polite"></section>
+<section class="empty:hidden mt-5" id="response" aria-live="polite"></section>
 
-<section class="answer" id="answer-box">
-  <label class="answer-label" for="answer"><%= level.question %></label>
-  <div class="answer-row">
-    <input type="text" id="answer" class="answer-input"
+<section class="mt-5 rounded-xl border border-accent bg-accent/6 p-4" id="answer-box">
+  <label class="mb-2.5 block font-semibold" for="answer"><%= level.question %></label>
+
+  <div class="flex flex-wrap gap-2">
+    <input type="text" id="answer" class="input flex-1 basis-48"
            placeholder="<%= level.answer_hint %>" spellcheck="false" />
-    <button type="button" class="btn btn-primary" id="submit-answer">Submit answer</button>
+    <button type="button" class="btn border-accent bg-accent whitespace-nowrap text-ink
+                                 hover:border-accent" id="submit-answer">Submit answer</button>
   </div>
-  <p class="answer-feedback" id="answer-feedback" aria-live="polite"></p>
-  <button type="button" class="btn btn-next" id="next-level" hidden>
+
+  <p class="mt-2.5 mb-0 min-h-[1.2em] text-sm" id="answer-feedback" aria-live="polite"></p>
+
+  <button type="button" class="btn mt-3 border-ok bg-ok text-[#04220c] hover:border-ok"
+          id="next-level" hidden>
     <%= has_next ? 'Next level' : 'See the final score' %>
   </button>
 </section>

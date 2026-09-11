@@ -1,27 +1,35 @@
-<h2 class="docs-title">Documentation</h2>
-<p class="docs-sub">Everything you have unlocked so far. Each level adds to this.</p>
+<h2 class="m-0 text-lg font-bold">Documentation</h2>
+<p class="mt-1 mb-4 text-sm text-muted">Everything you have unlocked so far. Each level adds to this.</p>
 
-<% docs.slice().reverse().forEach(function (group) { %>
-  <article class="doc-group">
-    <h3 class="doc-group-title">
-      <span class="doc-group-level">Level <%= group.level %></span>
+<% docs.slice().reverse().forEach(function (group, index) { %>
+  <article class="<%= index === 0 ? '' : 'mt-4 border-t border-line pt-4' %>">
+    <h3 class="mt-0 mb-3 flex flex-wrap items-center gap-2 text-sm font-bold">
+      <span class="rounded-full bg-accent/12 px-2 py-0.5 font-mono text-[0.7rem] font-semibold text-accent">
+        Level <%= group.level %>
+      </span>
       <%= group.name %>
     </h3>
 
     <% group.entries.forEach(function (entry) { %>
-      <div class="doc-entry">
-        <p class="doc-head">
+      <div class="mb-4">
+        <p class="m-0 mb-1.5 flex flex-wrap items-center gap-2">
           <span class="verb verb-<%= entry.method.toLowerCase() %>"><%= entry.method %></span>
-          <code class="doc-path"><%= entry.path %></code>
+          <code class="break-all text-[0.84rem] text-mint"><%= entry.path %></code>
         </p>
-        <p class="doc-summary"><%= entry.summary %></p>
-        <ul class="doc-details">
-          <% entry.details.forEach(function (line) { %><li><%= line %></li><% }) %>
+
+        <p class="m-0 mb-1.5 text-sm"><%= entry.summary %></p>
+
+        <ul class="m-0 list-disc pl-4 text-[0.83rem] text-muted">
+          <% entry.details.forEach(function (line) { %>
+            <li class="mb-0.5"><%= line %></li>
+          <% }) %>
         </ul>
 
         <% if (entry.schema && schema_tables[entry.schema]) { var table = schema_tables[entry.schema]; %>
           <table class="doc-table">
-            <caption><%= table.label %> fields</caption>
+            <caption class="pb-1.5 text-left text-[0.7rem] tracking-widest text-muted uppercase">
+              <%= table.label %> fields
+            </caption>
             <thead>
               <tr><th>Field</th><th>Type</th><th>Notes</th></tr>
             </thead>
@@ -29,10 +37,15 @@
               <% table.fields.forEach(function (field) { %>
                 <tr>
                   <td><code><%= field.name %></code></td>
-                  <td><span class="type"><%= field.type %></span></td>
+                  <td><span class="font-mono text-mint"><%= field.type %></span></td>
                   <td>
-                    <% if (field.server_generated) { %><span class="tag tag-auto">server generated</span>
-                    <% } else if (field.required) { %><span class="tag tag-req">required</span><% } %>
+                    <% if (field.server_generated) { %>
+                      <span class="mr-1 inline-block rounded bg-muted/15 px-1.5 text-[0.68rem]
+                                   whitespace-nowrap text-muted">server generated</span>
+                    <% } else if (field.required) { %>
+                      <span class="mr-1 inline-block rounded bg-err/15 px-1.5 text-[0.68rem]
+                                   whitespace-nowrap text-[#ff9d96]">required</span>
+                    <% } %>
                     <%= field.note %>
                   </td>
                 </tr>
