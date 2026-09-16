@@ -19,11 +19,11 @@ npm install
 npm start
 ```
 
-`npm run dev` לפתיחת השרת
+`npm run dev` לפתיחת השרת במוד פיתוח (מתעדכן אוטומטית)
 ניתן לשים env var PORT=XXX
 הדיפולט הוא 3000
 
-פתח **http://localhost:3000** בשרת
+פתח **http://localhost:3000** בדפדפן שלך
 
 ## אנד פוינטס
 
