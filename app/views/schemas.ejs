@@ -2,44 +2,42 @@
 <html lang="en">
 
 <head>
-  <%- include('partials/head', { pageTitle: 'Resource schemas - REST Quest' }) %>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Resource schemas - REST Quest</title>
+  <link rel="stylesheet" href="/static/index.css" />
 </head>
 
-<body class="m-0 bg-ink font-sans text-txt antialiased">
-
-  <header class="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3
-                 border-b border-line bg-inksoft px-5 py-3">
-    <div class="flex items-center gap-2.5">
-      <span class="rounded-lg bg-mint px-1.5 font-mono font-bold text-ink">{ }</span>
-      <span class="font-bold tracking-wide">REST Quest</span>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">{ }</span>
+      <span class="brand-name">REST Quest</span>
     </div>
-    <a class="chip chip-action" href="/">Back to the game</a>
+    <div class="topbar-meta">
+      <a class="chip chip-link" href="/">Back to the game</a>
+    </div>
   </header>
 
-  <main class="mx-auto max-w-[1400px] px-5 pt-4 pb-8">
-    <section class="rounded-xl border border-line bg-panel p-5">
-
-      <header class="mb-5">
-        <p class="m-0 mb-1 text-xs tracking-[0.14em] text-accent uppercase">Reference</p>
-        <h1 class="m-0 text-3xl leading-tight font-bold tracking-tight sm:text-4xl">Resource schemas</h1>
-        <p class="mt-1.5 mb-0 text-lg text-muted">
-          Every resource this API serves, with the fields and types the server will accept.
-        </p>
+  <main class="layout layout-single">
+    <section class="panel">
+      <header class="level-head">
+        <p class="eyebrow">Reference</p>
+        <h1 class="level-title">Resource schemas</h1>
+        <p class="level-sub">Every resource this API serves, with the fields and types the server will accept.</p>
       </header>
 
-      <nav class="mb-6 flex flex-wrap gap-1.5">
+      <nav class="schema-nav">
         <% resources.forEach(function (resource) { %>
-          <a class="chip chip-action" href="#<%= resource.key %>"><%= resource.label %></a>
+          <a class="chip chip-link" href="#<%= resource.key %>"><%= resource.label %></a>
         <% }) %>
       </nav>
 
-      <% resources.forEach(function (resource, index) { %>
-        <article class="<%= index === 0 ? '' : 'mt-6 border-t border-line pt-6' %>" id="<%= resource.key %>">
-          <h2 class="m-0 mb-1 text-xl font-bold"><%= resource.label %></h2>
-          <p class="m-0 mb-1.5">
-            <code class="break-all text-[0.84rem] text-mint"><%= resource.collection %></code>
-          </p>
-          <p class="m-0 mb-1.5 text-sm"><%= resource.description %></p>
+      <% resources.forEach(function (resource) { %>
+        <article class="schema-card" id="<%= resource.key %>">
+          <h2 class="schema-title"><%= resource.label %></h2>
+          <p class="doc-head"><code class="doc-path"><%= resource.collection %></code></p>
+          <p class="doc-summary"><%= resource.description %></p>
 
           <table class="doc-table">
             <thead>
@@ -49,17 +47,11 @@
               <% resource.fields.forEach(function (field) { %>
                 <tr>
                   <td><code><%= field.name %></code></td>
-                  <td><span class="font-mono text-mint"><%= field.type %></span></td>
+                  <td><span class="type"><%= field.type %></span></td>
                   <td>
-                    <% if (field.server_generated) { %>
-                      <span class="inline-block rounded bg-muted/15 px-1.5 text-[0.68rem]
-                                   whitespace-nowrap text-muted">server generated</span>
-                    <% } else if (field.required) { %>
-                      <span class="inline-block rounded bg-err/15 px-1.5 text-[0.68rem]
-                                   whitespace-nowrap text-[#ff9d96]">required</span>
-                    <% } else { %>
-                      <span class="text-muted">optional</span>
-                    <% } %>
+                    <% if (field.server_generated) { %><span class="tag tag-auto">server generated</span>
+                    <% } else if (field.required) { %><span class="tag tag-req">required</span>
+                    <% } else { %><span class="muted">optional</span><% } %>
                   </td>
                   <td><%= field.note %></td>
                 </tr>
@@ -68,14 +60,12 @@
           </table>
         </article>
       <% }) %>
-
     </section>
   </main>
 
-  <footer class="px-5 pt-5 pb-8 text-center text-xs text-muted">
+  <footer class="foot">
     This page is rendered on the server: the schema data is collected in Node and baked into the EJS template.
   </footer>
-
 </body>
 
 </html>

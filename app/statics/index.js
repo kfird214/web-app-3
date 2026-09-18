@@ -14,11 +14,6 @@ const scoreChip = document.getElementById('score-chip');
 
 const byId = id => document.getElementById(id);
 
-const FEEDBACK_BASE = 'mt-2.5 mb-0 min-h-[1.2em] text-sm';
-const RESPONSE_CARD = 'rounded-xl border border-line bg-inksoft p-3.5';
-const RESPONSE_LINE = 'm-0 mb-3 flex flex-wrap items-center gap-2.5 text-sm';
-const HEADER_CELL = 'border-t border-line px-2 py-1 align-top';
-
 function escapeHtml(value) {
     return String(value)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -35,13 +30,12 @@ function badgeFor(status) {
 
 function makeParamRow(name = '', value = '') {
     const row = document.createElement('div');
-    row.className = 'param-row flex items-center gap-1.5';
+    row.className = 'param-row';
     row.innerHTML = `
-        <input type="text" class="param-name input flex-1 basis-0" placeholder="name" spellcheck="false">
-        <span class="font-mono text-muted">=</span>
-        <input type="text" class="param-value input flex-1 basis-0" placeholder="value" spellcheck="false">
-        <button type="button" class="btn btn-del w-8 px-0 text-center text-err hover:border-err"
-                title="Remove this parameter">&minus;</button>`;
+        <input type="text" class="param-name" placeholder="name" spellcheck="false">
+        <span class="param-eq">=</span>
+        <input type="text" class="param-value" placeholder="value" spellcheck="false">
+        <button type="button" class="btn btn-mini btn-del" title="Remove this parameter">&minus;</button>`;
     row.querySelector('.param-name').value = name;
     row.querySelector('.param-value').value = value;
     return row;
@@ -77,10 +71,10 @@ function renderResponse(result) {
 
     if (result.local) {
         box.innerHTML = `
-            <div class="${RESPONSE_CARD}">
-                <p class="${RESPONSE_LINE}">
+            <div class="response-card">
+                <p class="response-line">
                     <span class="badge badge-err">not sent</span>
-                    <code class="break-all text-muted">${escapeHtml(`${result.method} ${result.url}`)}</code>
+                    <code>${escapeHtml(`${result.method} ${result.url}`)}</code>
                 </p>
                 <p class="verdict verdict-local">${escapeHtml(result.hint)}</p>
             </div>`;
@@ -104,30 +98,30 @@ function renderResponse(result) {
     }
 
     const notice = result.notice
-        ? `<p class="m-0 mb-3 text-sm text-warn">Server note: ${escapeHtml(result.notice)}</p>`
+        ? `<p class="notice">Server note: ${escapeHtml(result.notice)}</p>`
         : '';
 
     let headersHtml = '';
     if (result.headers && result.headers.length) {
         const rows = result.headers.map(([name, value]) => `
             <tr>
-                <td class="${HEADER_CELL} whitespace-nowrap text-accent"><code>${escapeHtml(name)}</code></td>
-                <td class="${HEADER_CELL} break-words">${escapeHtml(value)}</td>
+                <td><code>${escapeHtml(name)}</code></td>
+                <td>${escapeHtml(value)}</td>
             </tr>`).join('');
         headersHtml = `
-            <details class="mt-3 text-[0.83rem]">
-                <summary class="cursor-pointer text-muted">Response headers</summary>
-                <table class="mt-2 w-full border-collapse"><tbody>${rows}</tbody></table>
+            <details class="headers">
+                <summary>Response headers</summary>
+                <table class="header-table"><tbody>${rows}</tbody></table>
             </details>`;
     }
 
     const statusLabel = result.status + (result.status_text ? ` ${result.status_text}` : '');
 
     box.innerHTML = `
-        <div class="${RESPONSE_CARD}">
-            <p class="${RESPONSE_LINE}">
+        <div class="response-card">
+            <p class="response-line">
                 <span class="badge ${badgeFor(result.status)}">${escapeHtml(statusLabel)}</span>
-                <code class="break-all text-muted">${escapeHtml(`${result.method} ${result.url}`)}</code>
+                <code>${escapeHtml(`${result.method} ${result.url}`)}</code>
             </p>
             <p class="verdict ${result.request_ok ? 'verdict-ok' : 'verdict-no'}">${escapeHtml(verdictText)}</p>
             ${notice}${bodyHtml}${headersHtml}
@@ -182,7 +176,7 @@ async function sendRequest() {
     const url = currentUrl();
     const runButton = byId('run');
     runButton.disabled = true;
-    runButton.classList.add('opacity-60');
+    runButton.classList.add('is-busy');
 
     try {
         const response = await fetch(url, options);
@@ -219,7 +213,7 @@ async function sendRequest() {
         showLocalProblem(`The request could not be sent: ${err.message}`);
     } finally {
         runButton.disabled = false;
-        runButton.classList.remove('opacity-60');
+        runButton.classList.remove('is-busy');
     }
 }
 
@@ -289,7 +283,7 @@ function setFeedback(message, correct) {
     const feedback = byId('answer-feedback');
     if (!feedback) return;
     feedback.textContent = message;
-    feedback.className = `${FEEDBACK_BASE} ${correct ? 'text-ok' : 'text-[#ff9d96]'}`;
+    feedback.className = `answer-feedback ${correct ? 'is-right' : 'is-wrong'}`;
 }
 
 async function submitAnswer() {
@@ -342,7 +336,7 @@ async function submitAnswer() {
 function setLevelScore(points, earned) {
     const element = byId('level-score');
     if (!element || points === null || points === undefined) return;
-    element.textContent = `· ${points} pts ${earned ? 'earned' : 'at stake'}`;
+    element.textContent = `${points} pts ${earned ? 'earned' : 'at stake'}`;
 }
 
 function updateChips() {
@@ -357,7 +351,7 @@ function lockBuilder() {
     if (!form) return;
 
     for (const control of form.querySelectorAll('input, textarea, button')) control.disabled = true;
-    form.classList.add('opacity-65');
+    form.classList.add('is-locked');
 
     const answer = byId('answer');
     const submit = byId('submit-answer');

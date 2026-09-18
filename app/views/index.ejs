@@ -2,42 +2,41 @@
 <html lang="en">
 
 <head>
-  <%- include('partials/head', { pageTitle: 'REST Quest - learn HTTP by sending it' }) %>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>REST Quest - learn HTTP by sending it</title>
+  <link rel="stylesheet" href="/static/index.css" />
 </head>
 
-<body class="m-0 bg-ink font-sans text-txt antialiased">
-
-  <header class="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3
-                 border-b border-line bg-inksoft px-5 py-3">
-    <div class="flex items-center gap-2.5">
-      <span class="rounded-lg bg-mint px-1.5 font-mono font-bold text-ink">{ }</span>
-      <span class="font-bold tracking-wide">REST Quest</span>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">{ }</span>
+      <span class="brand-name">REST Quest</span>
     </div>
-    <div class="flex flex-wrap items-center gap-1.5">
+    <div class="topbar-meta">
       <span class="chip" id="progress-chip"><%= progress.solved %> / <%= progress.total %> solved</span>
-      <span class="chip text-mint" id="score-chip"><%= total_score %> pts</span>
-      <a class="chip chip-action" href="/schemas">Schemas</a>
-      <button type="button" class="chip chip-action" id="reset">Reset</button>
+      <span class="chip chip-score" id="score-chip"><%= total_score %> pts</span>
+      <a class="chip chip-link" href="/schemas">Schemas</a>
+      <button type="button" class="chip chip-reset" id="reset">Reset</button>
     </div>
   </header>
 
-  <nav class="px-5 pt-3" id="stepper" aria-label="Levels">
+  <nav class="stepper" id="stepper" aria-label="Levels">
     <%- include('partials/stepper') %>
   </nav>
 
-  <main class="mx-auto grid max-w-[1400px] grid-cols-1 items-start gap-4 px-5 pt-4 pb-8
-               lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-    <section class="min-w-0 rounded-xl border border-line bg-panel p-5" id="level-panel">
+  <main class="layout">
+    <section class="panel panel-level" id="level-panel">
       <%- include('partials/level') %>
     </section>
 
-    <aside class="scroll-dark min-w-0 rounded-xl border border-line bg-panel p-5
-                  lg:sticky lg:top-20 lg:max-h-[calc(100vh-6.5rem)] lg:overflow-y-auto" id="docs-panel">
+    <aside class="panel panel-docs" id="docs-panel">
       <%- include('partials/docs') %>
     </aside>
   </main>
 
-  <footer class="px-5 pt-5 pb-8 text-center text-xs text-muted">
+  <footer class="foot">
     Every request on this page is a real HTTP request to this server. Open your browser network tab and watch.
   </footer>
 
